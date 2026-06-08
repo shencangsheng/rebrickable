@@ -32,6 +32,10 @@ from paths import data_dir
 logger = logging.getLogger(__name__)
 
 BROWSER_START_TIMEOUT_SECONDS = 90
+CLOUDFLARE_RETRY_MAX = 10
+CLOUDFLARE_RETRY_DELAY_SECONDS = 3
+CLOUDFLARE_PAGE_WAIT_SECONDS = 90
+PERSISTENT_PROFILE_NAME = "chrome"
 
 REBRICKABLE_BASE = "https://rebrickable.com"
 LOGIN_URL = f"{REBRICKABLE_BASE}/login/"
@@ -175,14 +179,28 @@ def _browser_candidates() -> list[tuple[str, str | None]]:
     return [("chrome", chrome)] if chrome else [("chrome", None)]
 
 
-def _make_browser_profile(prefix: str) -> str:
+def _persistent_browser_profile() -> str:
+    path = data_dir() / "browser_profiles" / PERSISTENT_PROFILE_NAME
+    path.mkdir(parents=True, exist_ok=True)
+    return str(path)
+
+
+def _make_browser_profile(prefix: str, *, persistent: bool = False) -> str:
+    if persistent:
+        return _persistent_browser_profile()
     root = data_dir() / "browser_profiles"
     root.mkdir(parents=True, exist_ok=True)
     return tempfile.mkdtemp(prefix=prefix, dir=root)
 
 
+def _should_cleanup_profile(profile_dir: str | None) -> bool:
+    if not profile_dir:
+        return False
+    return os.path.normpath(profile_dir) != os.path.normpath(_persistent_browser_profile())
+
+
 def _cleanup_browser_profile(profile_dir: str | None) -> None:
-    if profile_dir and os.path.isdir(profile_dir):
+    if _should_cleanup_profile(profile_dir) and os.path.isdir(profile_dir):
         shutil.rmtree(profile_dir, ignore_errors=True)
 
 
@@ -341,11 +359,12 @@ def _create_browser_driver(
     offscreen: bool = False,
     visible: bool = False,
     profile_prefix: str = "session-",
+    persistent_profile: bool = False,
     on_progress: Callable[[str], None] | None = None,
 ) -> tuple[object, str | None]:
     _configure_selenium_for_frozen()
     errors: list[str] = []
-    profile_dir = _make_browser_profile(profile_prefix)
+    profile_dir = _make_browser_profile(profile_prefix, persistent=persistent_profile)
     timeout_message = _browser_start_timeout_message()
 
     for browser, binary in _browser_candidates():
@@ -432,6 +451,7 @@ def login_with_browser(
             headless=False,
             visible=True,
             profile_prefix="login-",
+            persistent_profile=True,
             on_progress=on_progress,
         )
         if on_progress:
@@ -459,32 +479,77 @@ def _is_cloudflare_challenge(html: str) -> bool:
     )
 
 
-def fetch_inventory_html(url: str, cookies: list[dict]) -> str:
-    # Cloudflare blocks headless Chrome; use an off-screen visible window instead.
-    driver, profile_dir = _create_browser_driver(
-        headless=False, offscreen=True, profile_prefix="export-"
-    )
-    try:
-        _inject_cookies(driver, cookies)
-        driver.get(url)
+class CloudflareBlockedError(RuntimeError):
+    """Raised when the page is blocked by Cloudflare."""
+
+
+def _ensure_session_in_browser(driver, cookies: list[dict]) -> None:
+    driver.get(REBRICKABLE_BASE)
+    if has_session_cookie(driver.get_cookies()):
+        return
+    _inject_cookies(driver, cookies)
+    driver.get(REBRICKABLE_BASE)
+
+
+def _wait_for_inventory_page(driver, wait_seconds: int = CLOUDFLARE_PAGE_WAIT_SECONDS) -> None:
+    deadline = time.time() + wait_seconds
+    while time.time() < deadline:
+        if "login" in driver.current_url.lower():
+            raise PermissionError("Cookie 已失效，请重新登录。")
+        if _is_cloudflare_challenge(driver.page_source):
+            logger.info("Cloudflare challenge detected, waiting for it to clear...")
+            time.sleep(2)
+            continue
         try:
-            WebDriverWait(driver, 30).until(
+            WebDriverWait(driver, min(5, max(1, deadline - time.time()))).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, "table tr"))
             )
+            return
         except TimeoutException:
-            if "login" in driver.current_url.lower():
-                raise PermissionError("Cookie 已失效，请重新登录。")
-            if _is_cloudflare_challenge(driver.page_source):
-                raise RuntimeError(
-                    "被 Cloudflare 拦截，请重新登录后再试。"
-                )
-            raise ValueError(
-                "未能在网页中解析到表格，请确认 inventory 编号正确且已登录。"
-            )
+            time.sleep(1)
+    if _is_cloudflare_challenge(driver.page_source):
+        raise CloudflareBlockedError("被 Cloudflare 拦截。")
+    raise ValueError(
+        "未能在网页中解析到表格，请确认 inventory 编号正确且已登录。"
+    )
+
+
+def _fetch_inventory_html_once(url: str, cookies: list[dict]) -> str:
+    # Reuse the same persistent profile as login so cf_clearance survives across runs.
+    driver, profile_dir = _create_browser_driver(
+        headless=False,
+        offscreen=True,
+        profile_prefix="export-",
+        persistent_profile=True,
+    )
+    try:
+        _ensure_session_in_browser(driver, cookies)
+        _wait_for_inventory_page(driver)
+        driver.get(url)
+        _wait_for_inventory_page(driver)
         return driver.page_source
     finally:
         driver.quit()
         _cleanup_browser_profile(profile_dir)
+
+
+def fetch_inventory_html(url: str, cookies: list[dict]) -> str:
+    last_error: Exception | None = None
+    for attempt in range(1, CLOUDFLARE_RETRY_MAX + 1):
+        try:
+            return _fetch_inventory_html_once(url, cookies)
+        except CloudflareBlockedError as exc:
+            last_error = exc
+            logger.warning(
+                "Cloudflare blocked export (attempt %s/%s), closing browser and retrying",
+                attempt,
+                CLOUDFLARE_RETRY_MAX,
+            )
+            if attempt < CLOUDFLARE_RETRY_MAX:
+                time.sleep(CLOUDFLARE_RETRY_DELAY_SECONDS)
+    raise RuntimeError(
+        f"被 Cloudflare 拦截，已自动重试 {CLOUDFLARE_RETRY_MAX} 次仍未成功，请稍后再试。"
+    ) from last_error
 
 
 def download_excel(
