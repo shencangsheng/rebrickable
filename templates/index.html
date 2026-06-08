@@ -325,14 +325,16 @@
       loginPollTimer = setInterval(async () => {
         const progressRes = await fetch('/api/login/progress');
         const progress = await progressRes.json();
-        if (progress.message) showMessage(progress.message, 'info');
-        await checkStatus();
+        const loggedIn = await checkStatus();
+        if (progress.message) {
+          const type = progress.running ? 'info' : (loggedIn ? 'success' : 'error');
+          showMessage(progress.message, type);
+        }
 
         if (!progress.running) {
           clearInterval(loginPollTimer);
           loginPollTimer = null;
           loginBtn.disabled = false;
-          const loggedIn = await checkStatus();
           if (loggedIn) {
             showMessage('登录成功，Cookie 已保存到本地', 'success');
           }
@@ -344,7 +346,7 @@
       hideMessage();
       downloadLink.classList.remove('show');
       loginBtn.disabled = true;
-      showMessage('正在打开浏览器，请在弹出的 Chrome 窗口中完成登录', 'info');
+      showMessage('正在启动浏览器，请稍候…', 'info');
 
       try {
         const res = await fetch('/api/login', { method: 'POST' });

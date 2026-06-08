@@ -47,14 +47,18 @@ def status():
 
 @app.route("/api/login", methods=["POST"])
 def login():
-    if login_lock.locked():
+    if login_state["running"]:
         return jsonify({"ok": False, "message": "登录流程正在进行中，请稍候"}), 409
 
     def run_login():
         login_state["running"] = True
-        login_state["message"] = "浏览器已打开，请在弹出的窗口中登录 Rebrickable"
+        login_state["message"] = "正在启动浏览器，请稍候…"
+
+        def on_progress(message: str) -> None:
+            login_state["message"] = message
+
         try:
-            login_with_browser(wait_seconds=300)
+            login_with_browser(wait_seconds=300, on_progress=on_progress)
             login_state["message"] = "登录成功，Cookie 已保存"
         except Exception as exc:
             login_state["message"] = str(exc)
