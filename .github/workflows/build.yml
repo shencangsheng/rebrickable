@@ -5,6 +5,10 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      version:
+        description: "App version without v prefix (e.g. 1.0.3); ignored when triggered by tag"
+        required: false
 
 jobs:
   build:
@@ -28,6 +32,23 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Determine app version
+        id: version
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          if [[ "$REF_TYPE" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          elif [[ -n "$INPUT_VERSION" ]]; then
+            VERSION="$INPUT_VERSION"
+          else
+            VERSION="0.0.0-dev.${RUN_NUMBER}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building app version: $VERSION"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -55,6 +76,12 @@ jobs:
       - name: Install Electron dependencies
         working-directory: electron
         run: npm ci
+
+      - name: Sync package version with release tag
+        working-directory: electron
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+        run: npm version "$APP_VERSION" --no-git-tag-version --allow-same-version
 
       - name: Package desktop app
         working-directory: electron

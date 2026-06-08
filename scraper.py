@@ -11,6 +11,7 @@ from io import BytesIO
 import requests
 from bs4 import BeautifulSoup
 from openpyxl import Workbook
+import PIL.Image  # noqa: F401 — required at runtime; ensures PyInstaller bundles Pillow
 from openpyxl.drawing.image import Image as OpenpyxlImage
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException, WebDriverException
@@ -541,8 +542,8 @@ def download_excel(
                     img = OpenpyxlImage(BytesIO(img_res.content))
                     img.width, img.height = 70, 70
                     ws.add_image(img, f"A{row_num}")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Failed to embed image %s: %s", img_url, exc)
 
     wb.save(output_file)
     return output_file
