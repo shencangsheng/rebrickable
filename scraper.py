@@ -1,9 +1,11 @@
+import logging
 import os
 import shutil
 import sys
 import tempfile
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from io import BytesIO
 
 import requests
@@ -12,7 +14,9 @@ from openpyxl import Workbook
 from openpyxl.drawing.image import Image as OpenpyxlImage
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException, WebDriverException
+from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.common.by import By
+from selenium.webdriver.edge.service import Service as EdgeService
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
@@ -23,6 +27,10 @@ from cookie_store import (
     save_cookies,
 )
 from paths import data_dir
+
+logger = logging.getLogger(__name__)
+
+BROWSER_START_TIMEOUT_SECONDS = 90
 
 REBRICKABLE_BASE = "https://rebrickable.com"
 LOGIN_URL = f"{REBRICKABLE_BASE}/login/"
@@ -92,6 +100,32 @@ def _configure_selenium_for_frozen() -> None:
         )
     if os.path.isfile(manager):
         os.environ["SE_MANAGER_PATH"] = manager
+
+
+def _bundled_driver_path(browser: str) -> str | None:
+    if not getattr(sys, "frozen", False):
+        return None
+    bundle_dir = getattr(sys, "_MEIPASS", "")
+    if not bundle_dir:
+        return None
+    if sys.platform == "win32":
+        names = {"chrome": "chromedriver.exe", "edge": "msedgedriver.exe"}
+    else:
+        names = {"chrome": "chromedriver", "edge": "msedgedriver"}
+    name = names.get(browser)
+    if not name:
+        return None
+    path = os.path.join(bundle_dir, "drivers", name)
+    return path if os.path.isfile(path) else None
+
+
+def _run_with_timeout(fn: Callable[[], object], timeout_seconds: int, message: str):
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(fn)
+        try:
+            return future.result(timeout=timeout_seconds)
+        except FuturesTimeoutError as exc:
+            raise RuntimeError(message) from exc
 
 
 def _expand(path: str) -> str:
@@ -201,7 +235,19 @@ def _format_browser_error(browser: str, exc: Exception) -> str:
         return f"{name} 与驱动版本不匹配：{detail}。请更新 Chrome 到最新版后重试。"
     if "user data directory" in detail.lower():
         return f"{name} 配置目录被占用：{detail}。请关闭所有 Chrome 窗口后重试。"
+    if "启动浏览器超时" in detail:
+        return detail
     return f"无法启动 {name}：{detail}"
+
+
+def _browser_start_timeout_message() -> str:
+    log_file = data_dir() / "app.log"
+    return (
+        f"启动浏览器超时（{BROWSER_START_TIMEOUT_SECONDS} 秒）。"
+        "常见原因：网络无法下载 ChromeDriver（请检查代理/VPN 或暂时关闭 Clash 等代理）、"
+        "杀毒软件拦截、或 Chrome 未正确安装。"
+        f"详细日志：{log_file}"
+    )
 
 
 def _raise_browser_window(driver) -> None:
@@ -242,53 +288,104 @@ def _raise_browser_window(driver) -> None:
         pass
 
 
+def _start_webdriver(
+    browser: str,
+    binary: str | None,
+    *,
+    headless: bool,
+    offscreen: bool,
+    visible: bool,
+    profile_dir: str,
+):
+    bundled_driver = _bundled_driver_path(browser)
+    if bundled_driver:
+        logger.info("Using bundled %s driver: %s", browser, bundled_driver)
+        os.environ["SE_OFFLINE"] = "true"
+    else:
+        os.environ.pop("SE_OFFLINE", None)
+        logger.info("No bundled driver for %s; selenium-manager will resolve one", browser)
+
+    if browser == "edge":
+        options = webdriver.EdgeOptions()
+        if binary:
+            options.binary_location = binary
+            logger.info("Edge binary: %s", binary)
+        _apply_common_browser_options(
+            options,
+            headless=headless,
+            offscreen=offscreen,
+            visible=visible,
+            profile_dir=profile_dir,
+        )
+        service = EdgeService(bundled_driver) if bundled_driver else None
+        return webdriver.Edge(service=service, options=options)
+
+    options = webdriver.ChromeOptions()
+    if binary:
+        options.binary_location = binary
+        logger.info("Chrome binary: %s", binary)
+    _apply_common_browser_options(
+        options,
+        headless=headless,
+        offscreen=offscreen,
+        visible=visible,
+        profile_dir=profile_dir,
+    )
+    service = ChromeService(bundled_driver) if bundled_driver else None
+    return webdriver.Chrome(service=service, options=options)
+
+
 def _create_browser_driver(
     headless: bool = False,
     offscreen: bool = False,
     visible: bool = False,
     profile_prefix: str = "session-",
+    on_progress: Callable[[str], None] | None = None,
 ) -> tuple[object, str | None]:
     _configure_selenium_for_frozen()
     errors: list[str] = []
     profile_dir = _make_browser_profile(profile_prefix)
+    timeout_message = _browser_start_timeout_message()
 
     for browser, binary in _browser_candidates():
+        browser_name = "Chrome" if browser == "chrome" else "Edge"
+        if on_progress:
+            on_progress(f"正在启动 {browser_name}，请稍候…")
+        logger.info(
+            "Starting %s (binary=%s, headless=%s, visible=%s)",
+            browser,
+            binary,
+            headless,
+            visible,
+        )
         try:
-            if browser == "edge":
-                options = webdriver.EdgeOptions()
-                if binary:
-                    options.binary_location = binary
-                _apply_common_browser_options(
-                    options,
+            driver = _run_with_timeout(
+                lambda browser=browser, binary=binary: _start_webdriver(
+                    browser,
+                    binary,
                     headless=headless,
                     offscreen=offscreen,
                     visible=visible,
                     profile_dir=profile_dir,
-                )
-                driver = webdriver.Edge(options=options)
-            else:
-                options = webdriver.ChromeOptions()
-                if binary:
-                    options.binary_location = binary
-                _apply_common_browser_options(
-                    options,
-                    headless=headless,
-                    offscreen=offscreen,
-                    visible=visible,
-                    profile_dir=profile_dir,
-                )
-                driver = webdriver.Chrome(options=options)
-
+                ),
+                BROWSER_START_TIMEOUT_SECONDS,
+                timeout_message,
+            )
             _stealth(driver)
             if visible and not headless and not offscreen:
                 _raise_browser_window(driver)
+            logger.info("%s started successfully", browser_name)
             return driver, profile_dir
         except Exception as exc:
+            logger.exception("Failed to start %s", browser_name)
             errors.append(_format_browser_error(browser, exc))
 
     _cleanup_browser_profile(profile_dir)
+    log_file = data_dir() / "app.log"
     raise RuntimeError(
-        "无法启动浏览器，请查看后台控制台窗口中的详细错误。\n" + "\n".join(errors)
+        "无法启动浏览器。\n"
+        + "\n".join(errors)
+        + f"\n详细日志：{log_file}"
     )
 
 
@@ -327,17 +424,17 @@ def login_with_browser(
     wait_seconds: int = 300,
     on_progress: Callable[[str], None] | None = None,
 ) -> list[dict]:
-    if on_progress:
-        on_progress("正在启动 Chrome，请稍候…")
-
     driver = None
     profile_dir = None
     try:
         driver, profile_dir = _create_browser_driver(
-            headless=False, visible=True, profile_prefix="login-"
+            headless=False,
+            visible=True,
+            profile_prefix="login-",
+            on_progress=on_progress,
         )
         if on_progress:
-            on_progress("Chrome 已打开，请在弹出的窗口中登录 Rebrickable")
+            on_progress("浏览器已打开，请在弹出的窗口中登录 Rebrickable")
 
         driver.get(LOGIN_URL)
         _raise_browser_window(driver)

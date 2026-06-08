@@ -11,17 +11,23 @@ root = Path(SPECPATH)
 # Selenium 4 lazily imports driver submodules via __getattr__; static analysis misses them.
 selenium_datas, selenium_binaries, selenium_hidden = collect_all("selenium")
 
+driver_datas = []
+drivers_dir = root / "drivers"
+if drivers_dir.is_dir():
+    driver_datas = [(str(drivers_dir), "drivers")]
+
 a = Analysis(
     [str(root / "app.py")],
     pathex=[str(root)],
     binaries=selenium_binaries,
-    datas=[(str(root / "templates"), "templates")] + selenium_datas,
+    datas=[(str(root / "templates"), "templates")] + selenium_datas + driver_datas,
     hiddenimports=[
         "werkzeug",
         "jinja2",
         "openpyxl",
         "bs4",
         "meta",
+        "logging_config",
         *selenium_hidden,
         *collect_submodules("selenium"),
     ],

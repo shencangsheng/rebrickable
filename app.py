@@ -4,6 +4,7 @@ import threading
 from flask import Flask, jsonify, render_template, request, send_file
 
 from cookie_store import clear_cookies, load_cookies
+from logging_config import setup_logging
 from meta import APP_AUTHOR, APP_NAME
 from paths import exports_dir, is_frozen, templates_dir
 from scraper import (
@@ -12,6 +13,8 @@ from scraper import (
     is_logged_in,
     login_with_browser,
 )
+
+setup_logging()
 
 app = Flask(__name__, template_folder=str(templates_dir()))
 
