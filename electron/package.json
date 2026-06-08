@@ -7,8 +7,8 @@
   "scripts": {
     "start": "electron .",
     "build:backend": "cd .. && pyinstaller rebrickable.spec --noconfirm",
-    "dist:win": "npm run build:backend && electron-builder --win",
-    "dist:mac": "npm run build:backend && electron-builder --mac",
+    "dist:win": "npm run build:backend && electron-builder --win nsis --x64",
+    "dist:mac": "npm run build:backend && electron-builder --mac dmg --arm64",
     "dist": "npm run build:backend && electron-builder"
   },
   "build": {
