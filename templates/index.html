@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ app_name }}</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --border: #2d3a4f;
+      --text: #e8edf4;
+      --muted: #8b9cb3;
+      --accent: #f5a623;
+      --accent-hover: #ffc04d;
+      --success: #3dd68c;
+      --danger: #f56565;
+      --radius: 12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(ellipse at top, #1a2744 0%, var(--bg) 60%);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .card {
+      width: 100%;
+      max-width: 480px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 32px;
+      box-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .logo-icon {
+      width: 40px;
+      height: 40px;
+      background: linear-gradient(135deg, var(--accent), #e85d04);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+    }
+
+    h1 {
+      font-size: 1.35rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin-bottom: 28px;
+      line-height: 1.5;
+    }
+
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      background: rgba(0, 0, 0, 0.25);
+      border-radius: 8px;
+      margin-bottom: 24px;
+      font-size: 0.875rem;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      flex-shrink: 0;
+    }
+
+    .status-dot.ok { background: var(--success); box-shadow: 0 0 8px var(--success); }
+    .status-dot.warn { background: var(--accent); }
+    .status-dot.err { background: var(--danger); }
+
+    label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--muted);
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .input-row {
+      display: flex;
+      gap: 0;
+      margin-bottom: 24px;
+    }
+
+    .input-prefix {
+      display: flex;
+      align-items: center;
+      padding: 0 14px;
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid var(--border);
+      border-right: none;
+      border-radius: 8px 0 0 8px;
+      color: var(--muted);
+      font-size: 0.8rem;
+      white-space: nowrap;
+    }
+
+    input[type="text"] {
+      flex: 1;
+      padding: 12px 14px;
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid var(--border);
+      border-radius: 0 8px 8px 0;
+      color: var(--text);
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    input[type="text"]:focus {
+      border-color: var(--accent);
+    }
+
+    .actions {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    button {
+      padding: 12px 20px;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+    }
+
+    button:active { transform: scale(0.98); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #1a1200;
+    }
+
+    .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+
+    .btn-secondary {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover:not(:disabled) { background: rgba(255, 255, 255, 0.05); }
+
+    .btn-danger {
+      background: transparent;
+      color: var(--danger);
+      border: 1px solid rgba(245, 101, 101, 0.3);
+      font-size: 0.85rem;
+      padding: 8px 16px;
+    }
+
+    .btn-danger:hover:not(:disabled) { background: rgba(245, 101, 101, 0.1); }
+
+    .message {
+      margin-top: 20px;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      line-height: 1.5;
+      display: none;
+    }
+
+    .message.show { display: block; }
+    .message.info { background: rgba(245, 166, 35, 0.12); color: var(--accent); }
+    .message.success { background: rgba(61, 214, 140, 0.12); color: var(--success); }
+    .message.error { background: rgba(245, 101, 101, 0.12); color: var(--danger); }
+
+    .footer {
+      margin-top: 24px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .footer a {
+      color: var(--muted);
+      font-size: 0.8rem;
+      text-decoration: none;
+    }
+
+    .footer a:hover { color: var(--accent); }
+
+    .footer-left {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .developer {
+      color: var(--muted);
+      font-size: 0.75rem;
+      opacity: 0.85;
+    }
+
+    .download-link {
+      display: none;
+      margin-top: 12px;
+      text-align: center;
+    }
+
+    .download-link.show { display: block; }
+
+    .download-link a {
+      color: var(--success);
+      font-weight: 500;
+      text-decoration: none;
+    }
+
+    .download-link a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">
+      <div class="logo-icon">🧱</div>
+      <h1>{{ app_name }}</h1>
+    </div>
+    <p class="subtitle">输入 Inventory 编号，登录后导出带图片的 Excel 零件清单。Cookie 会保存在本地，下次无需重复登录。</p>
+
+    <div class="status-bar">
+      <span class="status-dot" id="statusDot"></span>
+      <span id="statusText">检查登录状态...</span>
+    </div>
+
+    <label for="inventoryId">Inventory 编号</label>
+    <div class="input-row">
+      <span class="input-prefix">/inventory/</span>
+      <input type="text" id="inventoryId" placeholder="340344" inputmode="numeric" pattern="[0-9]*">
+    </div>
+
+    <div class="actions">
+      <button class="btn-primary" id="exportBtn" disabled>导出 Excel</button>
+      <button class="btn-secondary" id="loginBtn">登录 Rebrickable</button>
+    </div>
+
+    <div class="message" id="message"></div>
+    <div class="download-link" id="downloadLink">
+      <a href="#" id="downloadAnchor" download>⬇ 下载 Excel 文件</a>
+    </div>
+
+    <div class="footer">
+      <div class="footer-left">
+        <a href="https://rebrickable.com" target="_blank" rel="noopener">rebrickable.com</a>
+        <span class="developer">开发者：{{ app_author }}</span>
+      </div>
+      <button class="btn-danger" id="clearCookiesBtn">清除 Cookie</button>
+    </div>
+  </div>
+
+  <script>
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    const inventoryId = document.getElementById('inventoryId');
+    const exportBtn = document.getElementById('exportBtn');
+    const loginBtn = document.getElementById('loginBtn');
+    const clearCookiesBtn = document.getElementById('clearCookiesBtn');
+    const message = document.getElementById('message');
+    const downloadLink = document.getElementById('downloadLink');
+    const downloadAnchor = document.getElementById('downloadAnchor');
+
+    let loginPollTimer = null;
+
+    function showMessage(text, type) {
+      message.textContent = text;
+      message.className = 'message show ' + type;
+    }
+
+    function hideMessage() {
+      message.className = 'message';
+    }
+
+    async function checkStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        statusText.textContent = data.message;
+        statusDot.className = 'status-dot ' + (data.logged_in ? 'ok' : 'warn');
+        exportBtn.disabled = !data.logged_in;
+        return data.logged_in;
+      } catch {
+        statusText.textContent = '无法连接服务';
+        statusDot.className = 'status-dot err';
+        exportBtn.disabled = true;
+        return false;
+      }
+    }
+
+    function startLoginPoll() {
+      if (loginPollTimer) clearInterval(loginPollTimer);
+      loginPollTimer = setInterval(async () => {
+        const progressRes = await fetch('/api/login/progress');
+        const progress = await progressRes.json();
+        if (progress.message) showMessage(progress.message, 'info');
+        await checkStatus();
+
+        if (!progress.running) {
+          clearInterval(loginPollTimer);
+          loginPollTimer = null;
+          loginBtn.disabled = false;
+          const loggedIn = await checkStatus();
+          if (loggedIn) {
+            showMessage('登录成功，Cookie 已保存到本地', 'success');
+          }
+        }
+      }, 2000);
+    }
+
+    loginBtn.addEventListener('click', async () => {
+      hideMessage();
+      downloadLink.classList.remove('show');
+      loginBtn.disabled = true;
+      showMessage('正在打开浏览器，请在弹出的 Chrome 窗口中完成登录', 'info');
+
+      try {
+        const res = await fetch('/api/login', { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) {
+          showMessage(data.message, 'error');
+          loginBtn.disabled = false;
+          return;
+        }
+        startLoginPoll();
+      } catch {
+        showMessage('启动登录失败', 'error');
+        loginBtn.disabled = false;
+      }
+    });
+
+    exportBtn.addEventListener('click', async () => {
+      const id = inventoryId.value.trim();
+      if (!id || !/^\d+$/.test(id)) {
+        showMessage('请输入有效的 inventory 编号（纯数字）', 'error');
+        return;
+      }
+
+      hideMessage();
+      downloadLink.classList.remove('show');
+      exportBtn.disabled = true;
+      showMessage('正在抓取数据并生成 Excel，请稍候...', 'info');
+
+      try {
+        const res = await fetch('/api/export', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ inventory_id: id }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showMessage(data.message, 'error');
+          await checkStatus();
+          return;
+        }
+
+        showMessage('导出成功！', 'success');
+        downloadAnchor.href = data.download_url;
+        downloadLink.classList.add('show');
+      } catch {
+        showMessage('导出请求失败', 'error');
+      } finally {
+        exportBtn.disabled = false;
+        await checkStatus();
+      }
+    });
+
+    clearCookiesBtn.addEventListener('click', async () => {
+      if (!confirm('确定要清除已保存的 Cookie 吗？清除后需要重新登录。')) return;
+      await fetch('/api/cookies', { method: 'DELETE' });
+      downloadLink.classList.remove('show');
+      hideMessage();
+      await checkStatus();
+      showMessage('Cookie 已清除', 'info');
+    });
+
+    inventoryId.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !exportBtn.disabled) exportBtn.click();
+    });
+
+    checkStatus();
+  </script>
+</body>
+</html>

@@ -1,0 +1,49 @@
+{
+  "name": "rebrickable-exporter",
+  "version": "1.0.0",
+  "description": "Rebrickable inventory exporter desktop app",
+  "author": "红泥小火炉",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:backend": "cd .. && pyinstaller rebrickable.spec --noconfirm",
+    "dist:win": "npm run build:backend && electron-builder --win",
+    "dist:mac": "npm run build:backend && electron-builder --mac",
+    "dist": "npm run build:backend && electron-builder"
+  },
+  "build": {
+    "appId": "com.hongnixiaohuolu.rebrickable-exporter",
+    "productName": "Rebrickable 零件导出",
+    "copyright": "Copyright © 红泥小火炉",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../dist/",
+        "to": "backend",
+        "filter": ["rebrickable-backend*", "rebrickable-backend/**"]
+      }
+    ],
+    "win": {
+      "target": ["nsis"],
+      "icon": null
+    },
+    "mac": {
+      "target": ["dmg"],
+      "category": "public.app-category.utilities"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  }
+}
