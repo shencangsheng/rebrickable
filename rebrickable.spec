@@ -1,25 +1,32 @@
 # -*- mode: python ; coding: utf-8 -*-
 # PyInstaller spec — run: pyinstaller rebrickable.spec
 
-import sys
 from pathlib import Path
+
+from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 block_cipher = None
 root = Path(SPECPATH)
 
+# Selenium 4 lazily imports driver submodules via __getattr__; static analysis misses them.
+selenium_datas, selenium_binaries, selenium_hidden = collect_all("selenium")
+wdm_datas, wdm_binaries, wdm_hidden = collect_all("webdriver_manager")
+
 a = Analysis(
     [str(root / "app.py")],
     pathex=[str(root)],
-    binaries=[],
-    datas=[(str(root / "templates"), "templates")],
+    binaries=selenium_binaries + wdm_binaries,
+    datas=[(str(root / "templates"), "templates")] + selenium_datas + wdm_datas,
     hiddenimports=[
         "werkzeug",
         "jinja2",
         "openpyxl",
         "bs4",
-        "selenium",
-        "webdriver_manager",
         "meta",
+        *selenium_hidden,
+        *collect_submodules("selenium"),
+        *wdm_hidden,
+        *collect_submodules("webdriver_manager"),
     ],
     hookspath=[],
     hooksconfig={},
@@ -45,7 +52,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    upx_exclude=[],
+    upx_exclude=["selenium-manager", "selenium-manager.exe"],
     runtime_tmpdir=None,
     console=True,
     disable_windowed_traceback=False,
