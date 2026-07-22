@@ -1,4 +1,8 @@
-"""Download browser drivers for offline PyInstaller bundles."""
+"""Download browser drivers as offline fallback for PyInstaller bundles.
+
+Runtime prefers Selenium Manager to match the installed Chrome/Edge version;
+these bundled drivers are only used when online resolution fails.
+"""
 
 from __future__ import annotations
 

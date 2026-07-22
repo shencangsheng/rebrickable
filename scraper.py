@@ -245,13 +245,29 @@ def _stealth(driver) -> None:
     )
 
 
+def _is_driver_version_mismatch(exc: BaseException) -> bool:
+    detail = str(exc).lower()
+    markers = (
+        "this version of chromedriver",
+        "this version of msedgedriver",
+        "only supports chrome version",
+        "only supports microsoft edge version",
+        "current browser version is",
+        "session not created",
+    )
+    return any(marker in detail for marker in markers)
+
+
 def _format_browser_error(browser: str, exc: Exception) -> str:
     name = "Chrome" if browser == "chrome" else "Edge"
     detail = str(exc).strip() or exc.__class__.__name__
     if "cannot find chrome binary" in detail.lower():
         return f"找不到 {name} 可执行文件，请确认浏览器已正确安装。"
-    if "session not created" in detail.lower() or "version" in detail.lower():
-        return f"{name} 与驱动版本不匹配：{detail}。请更新 Chrome 到最新版后重试。"
+    if _is_driver_version_mismatch(exc) or "version" in detail.lower():
+        return (
+            f"{name} 与驱动版本不匹配：{detail}。"
+            "请保持网络畅通后重试（程序会自动下载匹配的驱动）。"
+        )
     if "user data directory" in detail.lower():
         return f"{name} 配置目录被占用：{detail}。请关闭所有 Chrome 窗口后重试。"
     if "启动浏览器超时" in detail:
@@ -263,8 +279,8 @@ def _browser_start_timeout_message() -> str:
     log_file = data_dir() / "app.log"
     return (
         f"启动浏览器超时（{BROWSER_START_TIMEOUT_SECONDS} 秒）。"
-        "常见原因：网络无法下载 ChromeDriver（请检查代理/VPN 或暂时关闭 Clash 等代理）、"
-        "杀毒软件拦截、或 Chrome 未正确安装。"
+        "常见原因：网络无法下载匹配的浏览器驱动（请检查代理/VPN 或暂时关闭 Clash 等代理）、"
+        "杀毒软件拦截、或浏览器未正确安装。"
         f"详细日志：{log_file}"
     )
 
@@ -307,7 +323,7 @@ def _raise_browser_window(driver) -> None:
         pass
 
 
-def _start_webdriver(
+def _launch_webdriver(
     browser: str,
     binary: str | None,
     *,
@@ -315,15 +331,8 @@ def _start_webdriver(
     offscreen: bool,
     visible: bool,
     profile_dir: str,
+    driver_path: str | None,
 ):
-    bundled_driver = _bundled_driver_path(browser)
-    if bundled_driver:
-        logger.info("Using bundled %s driver: %s", browser, bundled_driver)
-        os.environ["SE_OFFLINE"] = "true"
-    else:
-        os.environ.pop("SE_OFFLINE", None)
-        logger.info("No bundled driver for %s; selenium-manager will resolve one", browser)
-
     if browser == "edge":
         options = webdriver.EdgeOptions()
         if binary:
@@ -336,7 +345,7 @@ def _start_webdriver(
             visible=visible,
             profile_dir=profile_dir,
         )
-        service = EdgeService(bundled_driver) if bundled_driver else None
+        service = EdgeService(driver_path) if driver_path else None
         return webdriver.Edge(service=service, options=options)
 
     options = webdriver.ChromeOptions()
@@ -350,8 +359,62 @@ def _start_webdriver(
         visible=visible,
         profile_dir=profile_dir,
     )
-    service = ChromeService(bundled_driver) if bundled_driver else None
+    service = ChromeService(driver_path) if driver_path else None
     return webdriver.Chrome(service=service, options=options)
+
+
+def _start_webdriver(
+    browser: str,
+    binary: str | None,
+    *,
+    headless: bool,
+    offscreen: bool,
+    visible: bool,
+    profile_dir: str,
+):
+    """Start a browser, preferring a driver that matches the installed version.
+
+    Selenium Manager resolves/downloads a matching driver (and caches it).
+    Bundled drivers are only used as an offline fallback when that fails —
+    otherwise a frozen Chromedriver quickly drifts after Chrome auto-updates.
+    """
+    bundled_driver = _bundled_driver_path(browser)
+    launch_kwargs = {
+        "browser": browser,
+        "binary": binary,
+        "headless": headless,
+        "offscreen": offscreen,
+        "visible": visible,
+        "profile_dir": profile_dir,
+    }
+
+    os.environ.pop("SE_OFFLINE", None)
+    try:
+        logger.info("Resolving %s driver via selenium-manager", browser)
+        return _launch_webdriver(**launch_kwargs, driver_path=None)
+    except Exception as primary_exc:
+        if not bundled_driver:
+            raise
+        logger.warning(
+            "selenium-manager failed for %s (%s); trying bundled driver %s",
+            browser,
+            primary_exc,
+            bundled_driver,
+        )
+        os.environ["SE_OFFLINE"] = "true"
+        try:
+            return _launch_webdriver(**launch_kwargs, driver_path=bundled_driver)
+        except Exception as bundled_exc:
+            if _is_driver_version_mismatch(bundled_exc):
+                raise RuntimeError(
+                    f"自动匹配驱动失败：{primary_exc}；"
+                    f"内置驱动与当前浏览器版本不匹配：{bundled_exc}。"
+                    "请检查网络后重试（需下载匹配的驱动）。"
+                ) from primary_exc
+            raise RuntimeError(
+                f"自动匹配驱动失败：{primary_exc}；"
+                f"内置驱动也启动失败：{bundled_exc}"
+            ) from primary_exc
 
 
 def _create_browser_driver(
