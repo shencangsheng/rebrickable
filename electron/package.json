@@ -20,6 +20,8 @@
     },
     "files": [
       "main.js",
+      "preload.js",
+      "toolbar.html",
       "package.json"
     ],
     "extraResources": [
@@ -43,7 +45,7 @@
     }
   },
   "devDependencies": {
-    "electron": "^33.2.0",
-    "electron-builder": "^25.1.8"
+    "electron": "^43.4.0",
+    "electron-builder": "^26.0.12"
   }
 }

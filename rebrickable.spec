@@ -3,28 +3,18 @@
 
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_all, collect_submodules
+from PyInstaller.utils.hooks import collect_all
 
 block_cipher = None
 root = Path(SPECPATH)
 
-# Selenium 4 lazily imports driver submodules via __getattr__; static analysis misses them.
-selenium_datas, selenium_binaries, selenium_hidden = collect_all("selenium")
 pillow_datas, pillow_binaries, pillow_hidden = collect_all("PIL")
-
-driver_datas = []
-drivers_dir = root / "drivers"
-if drivers_dir.is_dir():
-    driver_datas = [(str(drivers_dir), "drivers")]
 
 a = Analysis(
     [str(root / "app.py")],
     pathex=[str(root)],
-    binaries=selenium_binaries + pillow_binaries,
-    datas=[(str(root / "templates"), "templates")]
-    + selenium_datas
-    + pillow_datas
-    + driver_datas,
+    binaries=pillow_binaries,
+    datas=[(str(root / "templates"), "templates")] + pillow_datas,
     hiddenimports=[
         "werkzeug",
         "jinja2",
@@ -34,9 +24,7 @@ a = Analysis(
         "bs4",
         "meta",
         "logging_config",
-        *selenium_hidden,
         *pillow_hidden,
-        *collect_submodules("selenium"),
     ],
     hookspath=[],
     hooksconfig={},
@@ -62,7 +50,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    upx_exclude=["selenium-manager", "selenium-manager.exe"],
+    upx_exclude=[],
     runtime_tmpdir=None,
     console=True,
     disable_windowed_traceback=False,

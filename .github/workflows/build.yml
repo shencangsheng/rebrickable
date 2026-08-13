@@ -60,16 +60,13 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
-      - name: Prepare bundled browser drivers
-        run: python scripts/prepare_drivers.py
-
       - name: Build backend with PyInstaller
         run: pyinstaller rebrickable.spec --noconfirm
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: electron/package-lock.json
 

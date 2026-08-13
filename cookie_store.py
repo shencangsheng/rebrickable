@@ -41,9 +41,12 @@ def has_session_cookie(cookies: list[dict]) -> bool:
 
 def cookies_to_session(session, cookies: list[dict]) -> None:
     for cookie in cookies:
+        domain = cookie.get("domain")
+        if domain and domain.startswith("."):
+            domain = domain[1:]
         session.cookies.set(
             cookie["name"],
             cookie["value"],
-            domain=cookie.get("domain"),
+            domain=domain,
             path=cookie.get("path", "/"),
         )

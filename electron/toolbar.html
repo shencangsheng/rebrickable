@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'">
+  <title>工具栏</title>
+  <style>
+    :root {
+      --bg: #121820;
+      --border: #2d3a4f;
+      --text: #e8edf4;
+      --muted: #8b9cb3;
+      --accent: #f5a623;
+      --accent-hover: #ffc04d;
+      --success: #3dd68c;
+      --danger: #f56565;
+      --input: #0c1016;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      user-select: none;
+    }
+
+    .bar {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nav {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    button {
+      border: none;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .icon-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text);
+      font-size: 16px;
+      line-height: 1;
+    }
+
+    .icon-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.06); }
+    .icon-btn:disabled { opacity: 0.35; cursor: default; }
+
+    .url {
+      flex: 1;
+      min-width: 0;
+      height: 32px;
+      padding: 0 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--input);
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+    }
+
+    .url:focus { border-color: var(--accent); }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+      font-size: 12px;
+      color: var(--muted);
+      max-width: 220px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      flex-shrink: 0;
+    }
+
+    .dot.ok { background: var(--success); }
+    .dot.warn { background: var(--accent); }
+    .dot.err { background: var(--danger); }
+
+    .btn {
+      height: 32px;
+      padding: 0 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #1a1200;
+    }
+
+    .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .btn-ghost:hover:not(:disabled) { background: rgba(255, 255, 255, 0.05); }
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <div class="nav">
+      <button class="icon-btn" id="backBtn" title="后退" disabled>←</button>
+      <button class="icon-btn" id="forwardBtn" title="前进" disabled>→</button>
+      <button class="icon-btn" id="reloadBtn" title="刷新">↻</button>
+    </div>
+    <input class="url" id="urlInput" spellcheck="false" placeholder="打开套装页面，或粘贴链接 / 输入 inventory 编号">
+    <div class="status">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusText">正在加载…</span>
+    </div>
+    <button class="btn btn-ghost" id="authBtn">登录</button>
+    <button class="btn btn-primary" id="exportBtn" disabled>导出 Excel</button>
+  </div>
+  <script>
+    const backBtn = document.getElementById("backBtn");
+    const forwardBtn = document.getElementById("forwardBtn");
+    const reloadBtn = document.getElementById("reloadBtn");
+    const urlInput = document.getElementById("urlInput");
+    const statusDot = document.getElementById("statusDot");
+    const statusText = document.getElementById("statusText");
+    const authBtn = document.getElementById("authBtn");
+    const exportBtn = document.getElementById("exportBtn");
+
+    let urlFocused = false;
+    let loggedIn = false;
+
+    urlInput.addEventListener("focus", () => {
+      urlFocused = true;
+    });
+    urlInput.addEventListener("blur", () => {
+      urlFocused = false;
+    });
+
+    function submitUrl() {
+      const value = urlInput.value.trim();
+      if (value) window.shell.go(value);
+      urlInput.blur();
+    }
+
+    urlInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") submitUrl();
+    });
+
+    backBtn.addEventListener("click", () => window.shell.back());
+    forwardBtn.addEventListener("click", () => window.shell.forward());
+    reloadBtn.addEventListener("click", () => window.shell.reload());
+
+    authBtn.addEventListener("click", async () => {
+      if (loggedIn) {
+        await window.shell.logout();
+        return;
+      }
+      window.shell.login();
+    });
+
+    exportBtn.addEventListener("click", async () => {
+      exportBtn.disabled = true;
+      try {
+        const result = await window.shell.exportCurrent();
+        if (result && result.canceled) return;
+      } catch (error) {
+        statusDot.className = "dot err";
+        statusText.textContent = error.message || "导出失败";
+      }
+    });
+
+    window.shell.onState((state) => {
+      backBtn.disabled = !state.canGoBack;
+      forwardBtn.disabled = !state.canGoForward;
+      if (!urlFocused && typeof state.url === "string") {
+        urlInput.value = state.url;
+      }
+
+      loggedIn = Boolean(state.loggedIn);
+      authBtn.textContent = loggedIn ? "退出登录" : "登录";
+
+      exportBtn.disabled = Boolean(state.exporting) || !state.exportable;
+
+      if (state.statusKind) {
+        statusDot.className = "dot " + state.statusKind;
+      } else if (state.exporting) {
+        statusDot.className = "dot warn";
+      } else if (loggedIn) {
+        statusDot.className = "dot ok";
+      } else {
+        statusDot.className = "dot warn";
+      }
+
+      if (state.message) {
+        statusText.textContent = state.message;
+      } else if (state.exportable) {
+        statusText.textContent = loggedIn ? "可导出当前套装" : "可导出（私有清单需登录）";
+      } else {
+        statusText.textContent = loggedIn ? "已登录，请打开套装页面" : "未登录，请打开套装页面";
+      }
+    });
+  </script>
+</body>
+</html>

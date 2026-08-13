@@ -1,25 +1,16 @@
 import os
-import threading
 
 from flask import Flask, jsonify, render_template, request, send_file
 
-from cookie_store import clear_cookies, load_cookies
+from cookie_store import save_cookies
 from logging_config import setup_logging
 from meta import APP_AUTHOR, APP_NAME
 from paths import exports_dir, is_frozen, templates_dir
-from scraper import (
-    build_inventory_url,
-    download_excel,
-    is_logged_in,
-    login_with_browser,
-)
+from scraper import download_excel_from_html, safe_file_stem
 
 setup_logging()
 
 app = Flask(__name__, template_folder=str(templates_dir()))
-
-login_lock = threading.Lock()
-login_state = {"running": False, "message": ""}
 
 
 @app.context_processor
@@ -34,79 +25,28 @@ def index():
 
 @app.route("/api/status")
 def status():
-    cookies = load_cookies()
-    if not cookies:
-        return jsonify({"logged_in": False, "message": "尚未登录"})
-
-    logged_in = is_logged_in(cookies)
-    return jsonify(
-        {
-            "logged_in": logged_in,
-            "message": "已登录" if logged_in else "Cookie 已失效，请重新登录",
-            "cookie_count": len(cookies),
-        }
-    )
-
-
-@app.route("/api/login", methods=["POST"])
-def login():
-    if login_state["running"]:
-        return jsonify({"ok": False, "message": "登录流程正在进行中，请稍候"}), 409
-
-    def run_login():
-        login_state["running"] = True
-        login_state["message"] = "正在启动浏览器，请稍候…"
-
-        def on_progress(message: str) -> None:
-            login_state["message"] = message
-
-        try:
-            login_with_browser(wait_seconds=300, on_progress=on_progress)
-            login_state["message"] = "登录成功，Cookie 已保存"
-        except Exception as exc:
-            login_state["message"] = str(exc)
-        finally:
-            login_state["running"] = False
-
-    thread = threading.Thread(target=run_login, daemon=True)
-    thread.start()
-    return jsonify({"ok": True, "message": "正在打开浏览器，请完成登录"})
-
-
-@app.route("/api/login/progress")
-def login_progress():
-    return jsonify(
-        {
-            "running": login_state["running"],
-            "message": login_state["message"],
-        }
-    )
-
-
-@app.route("/api/cookies", methods=["DELETE"])
-def delete_cookies():
-    clear_cookies()
-    return jsonify({"ok": True, "message": "Cookie 已清除"})
+    return jsonify({"ok": True, "message": "ready"})
 
 
 @app.route("/api/export", methods=["POST"])
 def export():
     data = request.get_json(silent=True) or {}
-    inventory_id = str(data.get("inventory_id", "")).strip()
-    if not inventory_id or not inventory_id.isdigit():
-        return jsonify({"ok": False, "message": "请输入有效的 inventory 编号（纯数字）"}), 400
+    html = str(data.get("html") or "")
+    cookies = data.get("cookies")
+    file_stem = safe_file_stem(str(data.get("file_stem") or "parts"))
 
-    cookies = load_cookies()
-    if not cookies:
-        return jsonify({"ok": False, "message": "尚未登录，请先登录"}), 401
+    if not html.strip():
+        return jsonify({"ok": False, "message": "页面内容为空，请刷新后再试"}), 400
 
-    if not is_logged_in(cookies):
-        return jsonify({"ok": False, "message": "Cookie 已失效，请重新登录"}), 401
+    if cookies:
+        if not isinstance(cookies, list):
+            return jsonify({"ok": False, "message": "Cookie 格式无效"}), 400
+        save_cookies(cookies)
 
-    output_file = exports_dir() / f"inventory_{inventory_id}.xlsx"
+    output_file = exports_dir() / f"{file_stem}.xlsx"
 
     try:
-        download_excel(inventory_id, str(output_file), cookies)
+        download_excel_from_html(html, str(output_file), cookies if isinstance(cookies, list) else None)
     except PermissionError as exc:
         return jsonify({"ok": False, "message": str(exc)}), 401
     except ValueError as exc:
@@ -114,29 +54,10 @@ def export():
     except Exception as exc:
         return jsonify({"ok": False, "message": f"导出失败: {exc}"}), 500
 
-    return jsonify(
-        {
-            "ok": True,
-            "message": "导出成功",
-            "download_url": f"/api/download/{inventory_id}",
-            "preview_url": build_inventory_url(inventory_id),
-        }
-    )
-
-
-@app.route("/api/download/<inventory_id>")
-def download(inventory_id: str):
-    if not inventory_id.isdigit():
-        return jsonify({"ok": False, "message": "无效的编号"}), 400
-
-    output_file = exports_dir() / f"inventory_{inventory_id}.xlsx"
-    if not output_file.exists():
-        return jsonify({"ok": False, "message": "文件不存在，请先导出"}), 404
-
     return send_file(
         output_file,
         as_attachment=True,
-        download_name=f"inventory_{inventory_id}.xlsx",
+        download_name=f"{file_stem}.xlsx",
     )
 
 
