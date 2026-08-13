@@ -196,7 +196,8 @@ function startBackend() {
   const { command, args, cwd } = resolveBackendCommand();
   backendProcess = spawn(command, args, {
     cwd,
-    stdio: "inherit",
+    stdio: app.isPackaged ? "ignore" : "inherit",
+    windowsHide: true,
     env: { ...process.env, PYTHONUNBUFFERED: "1" },
   });
 
